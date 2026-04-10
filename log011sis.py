@@ -19,6 +19,15 @@ def sestavi_podatke(seznam_paketov):
         # imu (xyz)
         if p1.id in [1, 2, 3]:
             data_int = np.frombuffer(p1.data, dtype=np.int16)
+            # skaliranje glede na senzor
+            if p1.id == 1:  # gyro
+                data_int = data_int / 120.0
+
+            elif p1.id == 2:  # acc
+                data_int = data_int / 20000.0
+
+            elif p1.id == 3:  # magnet
+                data_int = data_int / 500.0
 
             if len(data_int) % 3 != 0:
                 continue
@@ -64,12 +73,13 @@ def prikazi_signal(signal: np.ndarray, naslov: str = "", startInd: int = None, e
     end = signal.shape[0] if endInd is None else endInd
 
     signal = signal[start:end]
+    t = np.arange(signal.shape[0]) / 10
 
     plt.figure(figsize=(10, 5))
 
     # 1D signal (mikrofon / TOF)
     if signal.shape[1] == 1:
-        plt.plot(signal[:, 0])
+        plt.plot(t, signal[:, 0])
 
         if "mikrofon" in naslov.lower():
             plt.ylabel("Amplituda")
@@ -78,9 +88,9 @@ def prikazi_signal(signal: np.ndarray, naslov: str = "", startInd: int = None, e
 
     # 3D signal (IMU)
     else:
-        plt.plot(signal[:, 0], label="X")
-        plt.plot(signal[:, 1], label="Y")
-        plt.plot(signal[:, 2], label="Z")
+        plt.plot(t, signal[:, 0], label="X")
+        plt.plot(t, signal[:, 1], label="Y")
+        plt.plot(t, signal[:, 2], label="Z")
         plt.ylabel("Vrednost")
 
     plt.xlabel("Vzorec")
