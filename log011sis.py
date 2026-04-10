@@ -2,16 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from log011 import preberi_bin, Paket  #funkcija za branje binarnih podatkov
 
-# število bajtov na vrednost po ID-ju
-BYTES_PER_VALUE = {
-    1: 2,  # gyro
-    2: 2,  # acc
-    3: 2   # magnet
-}
-
-def sestavi_podatke_ločeno(seznam_paketov):
+def sestavi_podatke(seznam_paketov):
     """Vrne vzorčevalno frekvenco in signale ločeno po senzorjih"""
-    vsi_signali = {1: [], 2: [], 3: []}  # 1=gyro, 2=acc, 3=mag
+    signali = {1: [], 2: [], 3: [], 4: [], 5: []}
     Tpaketi = []
     Nvz_list = []
 
@@ -23,49 +16,81 @@ def sestavi_podatke_ločeno(seznam_paketov):
         T = p2.ts - p1.ts
         Tpaketi.append(T)
 
-        bytes_per_v = BYTES_PER_VALUE.get(p1.id, 2)
-        st_vrednosti = len(p1.data) // bytes_per_v
-        st_vzorcev = st_vrednosti // 3
-        Nvz_list.append(st_vzorcev)
+        # imu (xyz)
+        if p1.id in [1, 2, 3]:
+            data_int = np.frombuffer(p1.data, dtype=np.int16)
 
-        # pretvorba v int16 in reshape
-        data_int = np.frombuffer(p1.data, dtype=np.int16)
-        vzorci = data_int.reshape(-1, 3)
+            if len(data_int) % 3 != 0:
+                continue
 
-        if p1.id in vsi_signali:
-            vsi_signali[p1.id].append(vzorci)
+            vzorci = data_int.reshape(-1, 3)
+            signali[p1.id].append(vzorci)
+            Nvz_list.append(len(vzorci))
 
-    # povprečna frekvenca
-    Tavg = np.mean(Tpaketi)
-    Navg = np.mean(Nvz_list)
-    Fvz = Navg / Tavg
+        # mikrofon
+        elif p1.id == 4:
+            data_int = np.frombuffer(p1.data, dtype=np.int16)
+            vzorci = data_int.reshape(-1, 1)
 
-    # združijo se paketi po senzorjih
-    for sensor_id in vsi_signali:
-        if vsi_signali[sensor_id]:
-            vsi_signali[sensor_id] = np.vstack(vsi_signali[sensor_id])
+            signali[4].append(vzorci)
+            Nvz_list.append(len(vzorci))
+
+        # tof
+        elif p1.id == 5:
+            data_int = np.frombuffer(p1.data, dtype=np.uint16)
+            vzorci = data_int.reshape(-1, 1)
+
+            signali[5].append(vzorci)
+            Nvz_list.append(len(vzorci))
+
+    # izračun vzorčevalne frekvence
+    if len(Tpaketi) > 0:
+        Fvz = 1.0 / np.mean(Tpaketi)
+    else:
+        Fvz = 0
+
+    # združevanje vseh paketov
+    for sid in signali:
+        if signali[sid]:
+            signali[sid] = np.vstack(signali[sid])
         else:
-            vsi_signali[sensor_id] = np.empty((0, 3))
+            dim = 3 if sid in [1, 2, 3] else 1
+            signali[sid] = np.empty((0, dim))
 
-    return Fvz, vsi_signali
+    return Fvz, signali
 
 def prikazi_signal(signal: np.ndarray, naslov: str = "", startInd: int = None, endInd: int = None):
     start = 0 if startInd is None else startInd
     end = signal.shape[0] if endInd is None else endInd
+
     signal = signal[start:end]
+
     plt.figure(figsize=(10, 5))
-    if signal.ndim == 1 or signal.shape[1] == 1:
-        plt.plot(signal, label="Signal")
+
+    # 1D signal (mikrofon / TOF)
+    if signal.shape[1] == 1:
+        plt.plot(signal[:, 0])
+
+        if "mikrofon" in naslov.lower():
+            plt.ylabel("Amplituda")
+        else:
+            plt.ylabel("Razdalja (mm)")
+
+    # 3D signal (IMU)
     else:
         plt.plot(signal[:, 0], label="X")
         plt.plot(signal[:, 1], label="Y")
         plt.plot(signal[:, 2], label="Z")
+        plt.ylabel("Vrednost")
+
     plt.xlabel("Vzorec")
-    plt.ylabel("Vrednost")
+
     if naslov:
         plt.title(naslov)
+
     plt.grid(True)
-    plt.legend()
+    if signal.shape[1] > 1:
+        plt.legend()
     plt.tight_layout()
     plt.show()
 
@@ -74,7 +99,7 @@ if __name__ == "__main__":
     paketi = preberi_bin("log011.bin")
 
     # 2. sestavljanje podatkov ločeno po senzorjih (SIS)
-    Fvz, signali = sestavi_podatke_ločeno(paketi)
+    Fvz, signali = sestavi_podatke(paketi)
 
     print(f"Vzorčevalna frekvenca: {Fvz:.2f} Hz")
 
@@ -82,3 +107,5 @@ if __name__ == "__main__":
     prikazi_signal(signali[1], naslov=f"Gyroskop (Fvz={Fvz:.2f} Hz)")
     prikazi_signal(signali[2], naslov=f"Pospeškometer (Fvz={Fvz:.2f} Hz)")
     prikazi_signal(signali[3], naslov=f"Magnetometer (Fvz={Fvz:.2f} Hz)")
+    prikazi_signal(signali[4], naslov=f"Mikrofon (Fvz={Fvz:.2f} Hz)")
+    prikazi_signal(signali[5], naslov=f"TOF (Fvz={Fvz:.2f} Hz)")

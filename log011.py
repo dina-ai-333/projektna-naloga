@@ -88,7 +88,7 @@ def preberi_bin(file_path) -> list:
                     chunk_size = struct.unpack('<H', payload[pos + 1:pos + 3])[0] + 1
                     chunk_data = payload[pos + 4:pos + 4 + chunk_size]
 
-                    if chunk_id in [1, 2, 3]:
+                    if chunk_id in [1, 2, 3, 4, 5]:
                         paketi.append(Paket(chunk_id, timestamp, chunk_data))
 
                     pos += 4 + chunk_size
