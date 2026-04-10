@@ -93,7 +93,7 @@ def prikazi_signal(signal: np.ndarray, naslov: str = "", startInd: int = None, e
         plt.plot(t, signal[:, 2], label="Z")
         plt.ylabel("Vrednost")
 
-    plt.xlabel("Vzorec")
+    plt.xlabel("Čas [s]")
 
     if naslov:
         plt.title(naslov)
