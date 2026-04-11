@@ -20,6 +20,8 @@ def sestavi_podatke(seznam_paketov):
         zadnji_ts[p.id] = p.ts
         # IMU (gyro, acc, magnet)
         if p.id in [1, 2, 3]:
+            if len(p.data) % 2 =! 0:
+                continue
             data_int = np.frombuffer(p.data, dtype=np.int16)
             if p.id == 1:      # gyro
                 data_int = data_int * 8.75e-3
@@ -36,6 +38,8 @@ def sestavi_podatke(seznam_paketov):
                 Nvz[p.id].append(len(vzorci))
         # mikrofon
         elif p.id == 4:
+            if len(p.data) % 2 != 0:
+                continue
             data_int = np.frombuffer(p.data, dtype=np.int16)
             vzorci = data_int.reshape(-1, 1)
             signali[4].append(vzorci)
@@ -44,6 +48,8 @@ def sestavi_podatke(seznam_paketov):
                 Nvz[4].append(len(vzorci))
         # TOF
         elif p.id == 5:
+            if len(p.data) % 2 != 0:
+                continue
             data_int = np.frombuffer(p.data, dtype=np.uint16)
             vzorci = data_int.reshape(-1, 1)
             signali[5].append(vzorci)
