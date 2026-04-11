@@ -20,7 +20,7 @@ def sestavi_podatke(seznam_paketov):
         zadnji_ts[p.id] = p.ts
         # IMU (gyro, acc, magnet)
         if p.id in [1, 2, 3]:
-            if len(p.data) % 2 =! 0:
+            if len(p.data) % 2 != 0:
                 continue
             data_int = np.frombuffer(p.data, dtype=np.int16)
             if p.id == 1:      # gyro
