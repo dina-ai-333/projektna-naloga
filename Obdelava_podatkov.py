@@ -67,6 +67,23 @@ def sestavi_podatke(seznam_paketov):
                 continue
             
             data_int = np.frombuffer(p.data, dtype=np.uint16)
+            
+            #Koda za odstranjevanje napačnega signala
+            filtered = []
+            last_valid = None
+            
+            for v in data_int:
+                if v == 65535:
+                    if last_valid is not None:
+                        filtered.append(last_valid)
+                    else:
+                        filtered.append(0) #V primeru da je prva vrednost napačna
+                else:
+                    filtered.append(v)
+                    last_valid = v
+            data_int = np.array(filtered, dtype=np.uint16)
+            #Konec popravka
+            
             vzorci = data_int.reshape(-1, 1)
             signali[p.id].append(vzorci)
             if T is not None and T > 0:
