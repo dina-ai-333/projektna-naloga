@@ -1,10 +1,10 @@
 import cv2
 import mediapipe as mp
 import csv
+import numpy as np
 
-# =========================
+
 # MediaPipe inicializacija
-# =========================
 
 mp_hands = mp.solutions.hands
 
@@ -17,11 +17,9 @@ hands = mp_hands.Hands(
 
 mp_draw = mp.solutions.drawing_utils
 
-# =========================
 # CSV dataset file
-# =========================
 
-file = open("dataset/korean_heart_dataset.csv", mode="a", newline="")
+file = open("dataset/surfer_dataset.csv", mode="a", newline="")
 writer = csv.writer(file)
 
 # Trenutna labela
@@ -31,11 +29,14 @@ current_label = None
 frame_count = 0
 sample_count = 0
 
-# =========================
 # Kamera
-# =========================
 
 cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+def normalize_landmarks(landmarks):
+    landmarks = landmarks - landmarks[0]
+    scale = np.max(np.linalg.norm(landmarks, axis=1))
+    return landmarks, scale
 
 while True:
 
@@ -58,9 +59,7 @@ while True:
 
     rgb_frame.flags.writeable = True
 
-    # =========================
     # Landmark processing
-    # =========================
 
     if results.multi_hand_landmarks:
 
@@ -73,49 +72,42 @@ while True:
                 mp_hands.HAND_CONNECTIONS
             )
 
-            # =========================
+            #landmarks -> numpy
+            landmarks = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark])
+
+            #normalizacija
+            landmarks, scale = normalize_landmarks(landmarks)
+
+            #ignoriranje oddaljene roke
+            if scale < 0.25:
+                cv2.putText(
+                    frame,
+                    "HAND TOO FAR",
+                    (10, 160),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (0, 0, 255),
+                    2
+                )
+
+                continue
+
+            # scale normalizacija
+            landmarks = landmarks / scale
+
             # Feature extraction
-            # =========================
-
-            features = []
-
-            # Wrist landmark (center point)
-            wrist = hand_landmarks.landmark[0]
-
-            for lm in hand_landmarks.landmark:
-
-                # Normalized coordinates
-                normalized_x = lm.x - wrist.x
-                normalized_y = lm.y - wrist.y
-                normalized_z = lm.z - wrist.z
-
-                features.extend([
-                    normalized_x,
-                    normalized_y,
-                    normalized_z
-                ])
-
-            # =========================
-            # Save dataset samples
-            # =========================
+            features = landmarks.flatten().tolist()
 
             frame_count += 1
 
-            # Save every 5th frame
+            #shrani vsaki 5. frame
             if current_label is not None and frame_count % 5 == 0:
-
                 row = features + [current_label]
-
                 writer.writerow(row)
-
                 sample_count += 1
-
                 print(f"Saved samples: {sample_count}")
 
-    # =========================
     # UI text
-    # =========================
-
     cv2.putText(
         frame,
         f"Recording: {current_label}",
@@ -146,9 +138,7 @@ while True:
         2
     )
 
-    # =========================
     # Show frame
-    # =========================
 
     cv2.imshow("Gesture Dataset Recorder", frame)
 
@@ -185,9 +175,7 @@ while True:
     elif key == 27:  # ESC
         break
 
-# =========================
 # Cleanup
-# =========================
 
 file.close()
 

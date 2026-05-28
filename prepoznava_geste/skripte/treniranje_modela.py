@@ -37,6 +37,12 @@ def normalize_landmarks(X):
         # centriranje glede na zapestje (landmark 0)
         row = row - row[0]
 
+        #velikost roke
+        scale = np.max(np.linalg.norm(row, axis=1))
+        #zaščita pred deljenjem z 0
+        if scale > 0:
+            row = row / scale
+
         X_norm.append(row.flatten())
 
     return np.array(X_norm)

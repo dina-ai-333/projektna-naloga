@@ -22,6 +22,11 @@ cap = cv2.VideoCapture(0)
 
 gesture_text = "No hand"
 
+def normalize_landmarks(landmarks):
+    landmarks = landmarks - landmarks[0]
+    scale = np.max(np.linalg.norm(landmarks, axis=1))
+    return landmarks, scale
+
 while True:
     success, frame = cap.read()
     if not success:
@@ -31,6 +36,8 @@ while True:
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     results = hands.process(rgb)
+
+    gesture_text = "No hand"
 
     if results.multi_hand_landmarks:
 
@@ -44,8 +51,16 @@ while True:
 
             landmarks = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark])
 
-            #normalizacija - enaka kot pri treniranju modela
-            landmarks = landmarks - landmarks[0]
+            #normalizacija
+            landmarks, scale = normalize_landmarks(landmarks)
+
+            #filter za oddaljeno roko
+            if scale < 0.25:
+                gesture_text = "Hand too far"
+                continue
+
+            #končna normalizacija
+            landmarks = landmarks / scale
 
             features = landmarks.flatten().reshape(1, -1)
 
@@ -57,7 +72,7 @@ while True:
 
             print("Prediction:", predicted_label)
             print("Confidence:", round(confidence, 3))
-            print("FEATURE SIZE:", features.shape)
+            print("Scale:", round(scale, 3))
             print("----------------------------")
 
             #filter
@@ -65,9 +80,6 @@ while True:
                 gesture_text = predicted_label
             else:
                 gesture_text = "unknown"
-
-    else:
-        gesture_text = "No hand"
 
     cv2.putText(
         frame,
