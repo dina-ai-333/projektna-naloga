@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -12,18 +12,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
-        run: |
+      - run: |
           pip install -r requirements.txt
           pip install pytest
 
-      - name: Run tests
-        run: pytest
+      - run: pytest
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build package
+        run: |
+          echo "Building application..."
+          zip -r app.zip .
+
+      - name: Deploy
+        run: |
+          echo "Deploying application (simulated)..."
