@@ -156,7 +156,7 @@ def prikazi_signal(signal: np.ndarray, Fvz: float, naslov: str = "", startInd: i
 
 if __name__ == "__main__":
     # 1. branje podatkov
-    paketi = preberi_bin("log004.bin")
+    paketi = preberi_bin("LOG060.bin")
     # 2. sestavljanje
     Fvz, signal = sestavi_podatke(paketi)
 
