@@ -1,0 +1,232 @@
+# STM32 TCP/IP Service
+
+Sistemska storitev ki nadzoruje STM32 napravo prek serijskega porta in jo izpostavlja
+TCP/IP vmesniku. Deluje na **Linux** (systemd) in **Windows** (NSSM / SC).
+
+---
+
+## Arhitektura
+
+```
+┌──────────────────────────────────────────────────┐
+│                 stm32_service.py                 │
+│                                                  │
+│  ┌─────────────┐   ┌────────────┐  ┌──────────┐ │
+│  │HotplugMonitor│   │ TCPServer  │  │STM32Mgr  │ │
+│  │  (thread)   │   │  (thread)  │  │(shared)  │ │
+│  │             │   │            │  │          │ │
+│  │ Polling USB │──▶│ accept()   │  │ serial   │ │
+│  │ ports vsake │   │            │  │ lock     │ │
+│  │ 2 sekundi   │   │ ClientHdlr │◀─│ connect/ │ │
+│  │             │   │ (thread/   │  │ send_cmd │ │
+│  │ broadcast   │──▶│  client)   │  │ read_file│ │
+│  └─────────────┘   └────────────┘  └──────────┘ │
+└──────────────────────────────────────────────────┘
+         │                   │
+    Serial port          TCP :5000
+    /dev/ttyACM0     ◀── nc 127.0.0.1 5000
+```
+
+### Nitni model
+
+| Nit | Naloga |
+|-----|--------|
+| `HotplugMonitor` | Vsakih 2 s skenira USB porte, poveže/odklopi STM32 |
+| `TCPServer` | Sprejema TCP povezave (blokirajoč `accept` z 1 s timeout) |
+| `ClientHandler` | Ena nit na TCP odjemalca, bere ukaze, piše odgovore |
+| Glavna nit | Čaka na SIGTERM/SIGINT, nato uredi zaustavitev |
+
+Vse operacije na `serial.Serial` objektu so zaščitene z `threading.Lock`,
+zato hkratni ukazi različnih odjemalcev ne povzročijo race-conditionov.
+
+---
+
+## Namestitev (Linux / systemd)
+
+### 1. Namestite odvisnosti
+
+```bash
+sudo apt install python3-pip
+pip3 install pyserial
+# ali iz requirements.txt:
+pip3 install -r requirements.txt
+```
+
+### 2. Kopirajte datoteke
+
+```bash
+sudo mkdir -p /opt/stm32_service
+sudo cp stm32_service.py /opt/stm32_service/
+sudo chmod +x /opt/stm32_service/stm32_service.py
+```
+
+### 3. Dodajte uporabnika v skupino `dialout`
+
+```bash
+sudo usermod -aG dialout <vas_uporabnik>
+# Nato se odjavite in prijavite, ali zaženite:
+newgrp dialout
+```
+
+### 4. Namestite systemd enoto
+
+```bash
+# Uredite User= v stm32_service.service, nato:
+sudo cp stm32_service.service /etc/systemd/system/
+
+sudo systemctl daemon-reload
+sudo systemctl enable stm32_service
+sudo systemctl start stm32_service
+```
+
+### 5. Preverite delovanje
+
+```bash
+sudo systemctl status stm32_service
+journalctl -u stm32_service -f
+```
+
+---
+
+## Namestitev (Windows)
+
+Na Windowsih ni systemd. Priporočena orodja:
+
+### Možnost A — NSSM (priporočeno)
+
+```powershell
+# Prenesite nssm.exe z https://nssm.cc
+nssm install STM32Service "C:\Python311\python.exe" "C:\stm32_service\stm32_service.py"
+nssm set STM32Service AppDirectory "C:\stm32_service"
+nssm start STM32Service
+```
+
+### Možnost B — SC (Windows Service Control)
+
+Zahteva wrapper (npr. pywin32). Priporočamo NSSM za enostavnost.
+
+### Odjemalec na Windowsih
+
+```powershell
+# Z ncat (iz paketa nmap):
+ncat 127.0.0.1 5000
+
+# Ali z winscp/telnet (vgrajen v novejše Windowse):
+telnet 127.0.0.1 5000
+```
+
+---
+
+## Uporaba — ukazi
+
+Vzpostavite TCP povezavo:
+
+```bash
+nc 127.0.0.1 5000
+```
+
+Ob vzpostavitvi dobite pozdravno sporočilo:
+
+```
+Connected to SPO STM32 service - No STM32 detected
+```
+
+ali če je STM32 že priključen:
+
+```
+Connected to SPO STM32 service - STM32 at /dev/ttyACM0
+```
+
+### Podprti ukazi
+
+| Ukaz | Opis | Odgovor (uspeh) |
+|------|------|-----------------|
+| `STATUS` | Stanje naprave | `STM32 is connected on /dev/ttyACM0` |
+| `GET_LAST` | Prenesi zadnjo datoteko z STM32 | `File xyz.csv from STM32 has been processed` |
+| `GET_ALL` | Prenesi vse datoteke z STM32 | `File a.csv … processed` × N + `All files from STM32 are processed` |
+| `GET_FILE\|ime` | Prenesi točno določeno datoteko | `File ime from STM32 has been processed` |
+| `DELETE` | Pobriši vse datoteke na STM32 | `All files on STM32 are deleted` |
+
+Prenesene datoteke se shranijo v delovno mapo storitve (`/opt/stm32_service/`).
+
+### Push obvestila (brez ukaza)
+
+Storitev sama pošlje sporočilo vsem priključenim odjemalcem ob:
+
+| Dogodek | Sporočilo |
+|---------|-----------|
+| STM32 priključen | `STM32 detected at /dev/ttyACM0` |
+| STM32 odklopljen | `STM32 has disconnected` |
+
+### Napake
+
+```
+FAIL: STM32 is not connected       ← naprava ni priključena
+FAIL: No files on STM32            ← ni datotek za prenos
+FAIL: STM32 disconnected during operation  ← odklopili med prenosom
+FAIL: Unknown command 'XYZ'        ← napačen ukaz
+```
+
+---
+
+## Konfiguracija
+
+Nastavitve so na vrhu `stm32_service.py`:
+
+```python
+TCP_HOST      = "0.0.0.0"   # Poslušaj na vseh vmesnikih
+TCP_PORT      = 5000         # TCP vrata
+STM32_VID     = 0x0483       # USB Vendor ID (ST Microelectronics)
+STM32_PID     = 0x5740       # USB Product ID (Virtual COM Port)
+SERIAL_BAUD   = 115200       # Baudrate
+POLL_INTERVAL = 2            # Sekunde med USB skeniranji
+WORK_DIR      = ...          # Mapa za shranjevanje datotek (privzeto: mapa skripte)
+```
+
+---
+
+## Serijski protokol (STM32 stran)
+
+Storitev pričakuje naslednje obnašanje od STM32 firmware-a:
+
+| Ukaz (→ STM32) | Odgovor (← STM32) |
+|----------------|-------------------|
+| `LIST\n` | `file1.csv,file2.csv,file3.csv\n` |
+| `GET_FILE\|ime\n` | `<velikost v bajtih>\n` + `<binarna vsebina>` |
+| `DELETE_ALL\n` | (karkoli — ni kritično) |
+
+---
+
+## Upravljanje storitve
+
+```bash
+# Stanje
+sudo systemctl status stm32_service
+
+# Dnevnik v živo
+journalctl -u stm32_service -f
+
+# Ponovni zagon
+sudo systemctl restart stm32_service
+
+# Ustavitev
+sudo systemctl stop stm32_service
+
+# Popolna odstranitev
+sudo systemctl disable stm32_service
+sudo rm /etc/systemd/system/stm32_service.service
+sudo systemctl daemon-reload
+```
+
+---
+
+## Robni primeri (Edge Cases)
+
+| Scenarij | Obnašanje |
+|----------|-----------|
+| STM32 ni priključen ob zagonu | Storitev teče, čaka na napravo |
+| STM32 odklopijo med prenosom datoteke | `IOError` je ujet, odjemalec prejme `FAIL:…`, storitev nadaljuje |
+| Več odjemalcev hkrati | Vsak dobi svojo nit; `threading.Lock` prepreči race-condition na seriji |
+| Serijska napaka (šum, reset) | Zajet z `SerialException`, interno stanje se ponastavi |
+| Ponovni zagon storitve | systemd jo po 5 s samodejno znova zažene (`Restart=on-failure`) |
+| STM32 z istim VID/PID se priklopi na drug port | `HotplugMonitor` zaznа in vzpostavi novo povezavo |

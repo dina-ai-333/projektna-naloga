@@ -1,0 +1,37 @@
+[Unit]
+Description=SPO STM32 Serial-over-TCP Service
+After=network.target
+# Restart if the service crashes for any reason
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+# --- Identity ---
+# Change these to the user that owns the project directory.
+# The user must be in the 'dialout' group (Linux) to access serial ports:
+#   sudo usermod -aG dialout <your_user>
+User=pi
+Group=dialout
+
+# --- Runtime ---
+Type=simple
+WorkingDirectory=/opt/stm32_service
+ExecStart=/usr/bin/python3 /opt/stm32_service/stm32_service.py
+
+# --- Restart policy ---
+Restart=on-failure
+RestartSec=5s
+
+# --- Logging ---
+# Logs are forwarded to journald automatically via stdout.
+# View with:  journalctl -u stm32_service -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stm32_service
+
+# --- Security hardening (optional, comment out if they cause issues) ---
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
